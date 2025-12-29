@@ -120,8 +120,12 @@ export class KumihoSpace implements INodeType {
           path: '/api/v1/spaces',
           body: { 
             project_name: projectName,
-            space_name: spaceName,
-            parent_path: parentPath || undefined
+            // REST API expects `name` and requires `parent_path`.
+            // Use empty string to create a root-level space.
+            name: spaceName,
+            parent_path: parentPath,
+            // Keep `space_name` for backward-compatibility with older servers.
+            space_name: spaceName
           }
         });
       } else if (operation === 'get') {
