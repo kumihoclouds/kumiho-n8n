@@ -19,36 +19,77 @@ if ($LASTEXITCODE -ne 0) {
   throw "Build failed."
 }
 
-Write-Host "Copying icons..." -ForegroundColor Cyan
-$iconMap = @{
-    "Project.png" = "KumihoProject"
-    "Space.png" = "KumihoSpace"
-    "Graph.png" = "KumihoGraph"
-    "Revision.png" = "KumihoRevision"
-    "Item.png" = "KumihoItem"
-    "Artifact.png" = "KumihoArtifact"
-    "Bundle.png" = "KumihoBundle"
-    "Search.png" = "KumihoSearch"
-    "ResolveKref.png" = "KumihoResolveKref"
-    "EventStream.png" = "KumihoEventStream"
+Write-Host "Ensuring node icon assets are present in dist..." -ForegroundColor Cyan
+
+$nodesRoot = Join-Path $projectRoot "nodes"
+$distRoot = Join-Path $projectRoot "dist"
+$distNodesRoot = Join-Path $distRoot "nodes"
+
+if (-not (Test-Path $distNodesRoot)) {
+    throw "Build output missing: $distNodesRoot"
 }
 
-foreach ($icon in $iconMap.Keys) {
-    $source = Join-Path $projectRoot "nodes\images\$icon"
-    $destDir = Join-Path $projectRoot "dist\nodes\$($iconMap[$icon])"
-    $dest = Join-Path $destDir $icon
-    
-    if (Test-Path $source) {
-        if (Test-Path $destDir) {
-            Copy-Item -Path $source -Destination $dest -Force
-            Write-Host "Copied $icon to $destDir" -ForegroundColor Green
-        } else {
-            Write-Host "Destination directory $destDir does not exist." -ForegroundColor Yellow
+$nodeTsFiles = Get-ChildItem -Path $nodesRoot -Recurse -File -Filter "*.node.ts"
+if (-not $nodeTsFiles -or $nodeTsFiles.Count -eq 0) {
+    Write-Warning "No *.node.ts files found under $nodesRoot"
+}
+
+$iconRegexSingle = [regex]"icon\s*:\s*'file:([^']+)'"
+$iconRegexDouble = [regex]'icon\s*:\s*"file:([^"]+)"'
+
+$copied = 0
+$missing = @()
+
+foreach ($nodeTs in $nodeTsFiles) {
+    $nodeDir = Split-Path -Parent $nodeTs.FullName
+    $nodeRelDir = $nodeDir.Substring($nodesRoot.Length).TrimStart('\\')
+    $distNodeDir = Join-Path $distNodesRoot $nodeRelDir
+
+    $content = Get-Content -LiteralPath $nodeTs.FullName -Raw
+    $matches = @()
+    $matches += $iconRegexSingle.Matches($content)
+    $matches += $iconRegexDouble.Matches($content)
+
+    foreach ($m in $matches) {
+        $iconRel = $m.Groups[1].Value
+        if ([string]::IsNullOrWhiteSpace($iconRel)) {
+            continue
         }
-    } else {
-        Write-Host "Icon $source not found." -ForegroundColor Yellow
+
+        $iconExt = [System.IO.Path]::GetExtension($iconRel)
+        if (-not $iconExt -or $iconExt.ToLowerInvariant() -ne '.svg') {
+            throw "Non-SVG node icon detected in $($nodeTs.FullName): file:$iconRel. For n8n Cloud compatibility, icons must be SVG."
+        }
+
+        $sourceCandidate = Join-Path $nodeDir $iconRel
+        $destCandidate = Join-Path $distNodeDir $iconRel
+
+        try {
+            $sourceFull = (Resolve-Path -LiteralPath $sourceCandidate -ErrorAction Stop).Path
+        } catch {
+            $missing += "$($nodeTs.FullName):$iconRel (expected at $sourceCandidate)"
+            continue
+        }
+
+        $destFull = [System.IO.Path]::GetFullPath($destCandidate)
+        $destDir = Split-Path -Parent $destFull
+        if (-not (Test-Path $destDir)) {
+            New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+        }
+
+        Copy-Item -LiteralPath $sourceFull -Destination $destFull -Force
+        $copied++
+        Write-Host "Copied icon asset: $iconRel" -ForegroundColor Green
     }
 }
+
+if ($missing.Count -gt 0) {
+    Write-Warning "One or more node icon assets were referenced but not found:"
+    $missing | ForEach-Object { Write-Warning "  $_" }
+    throw "Missing icon assets. Fix the paths/files above or update the node icon declarations."
+}
+
+Write-Host "Copied $copied SVG icon(s) into dist." -ForegroundColor Green
 
 $customDir = Join-Path $env:USERPROFILE ".n8n\\custom"
 

@@ -1,5 +1,5 @@
 {
-  "node": "n8n-nodes-kumiho.kumihoSpace",
+  "node": "n8n-nodes-kumiho.kumihoMcpClient",
   "nodeVersion": "1",
   "codexVersion": "1.0",
   "categories": ["Development"],

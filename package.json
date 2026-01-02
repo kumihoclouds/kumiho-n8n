@@ -1,16 +1,11 @@
 {
   "name": "n8n-nodes-kumiho",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Kumiho nodes for n8n",
   "license": "MIT",
   "homepage": "https://kumiho.io",
-  "keywords": [
-    "n8n-community-node-package"
-  ],
-  "author": {
-    "name": "kaveone",
-    "email": "duub.site@gmail.com"
-  },
+  "keywords": ["n8n-community-node-package"],
+  "author": { "name": "kaveone", "email": "duub.site@gmail.com" },
   "repository": {
     "type": "git",
     "url": "https://github.com/kumihoclouds/kumiho-n8n.git"
@@ -24,26 +19,15 @@
     "release": "n8n-node release",
     "prepublishOnly": "n8n-node prerelease"
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "n8n": {
     "n8nNodesApiVersion": 1,
     "strict": true,
-    "credentials": [
-      "dist/credentials/KumihoApi.credentials.js"
-    ],
+    "credentials": ["dist/credentials/KumihoApi.credentials.js"],
     "nodes": [
       "dist/nodes/KumihoEventStream/KumihoEventStreamTrigger.node.js",
-      "dist/nodes/KumihoItem/KumihoItem.node.js",
-      "dist/nodes/KumihoRevision/KumihoRevision.node.js",
-      "dist/nodes/KumihoArtifact/KumihoArtifact.node.js",
-      "dist/nodes/KumihoBundle/KumihoBundle.node.js",
-      "dist/nodes/KumihoSearch/KumihoSearch.node.js",
-      "dist/nodes/KumihoResolveKref/KumihoResolveKref.node.js",
-      "dist/nodes/KumihoProject/KumihoProject.node.js",
-      "dist/nodes/KumihoSpace/KumihoSpace.node.js",
-      "dist/nodes/KumihoGraph/KumihoGraph.node.js"
+      "dist/nodes/KumihoAction/KumihoAction.node.js",
+      "dist/nodes/KumihoMcpClient/KumihoMcpClient.node.js"
     ]
   },
   "devDependencies": {
@@ -55,7 +39,5 @@
     "release-it": "^19.0.4",
     "typescript": "5.9.2"
   },
-  "peerDependencies": {
-    "n8n-workflow": "*"
-  }
+  "peerDependencies": { "n8n-workflow": "*" }
 }
