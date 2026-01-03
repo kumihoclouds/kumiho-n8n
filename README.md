@@ -16,7 +16,6 @@ For full operation-by-operation documentation, see the usage guide below.
 
 - Detailed usage: [docs/usage.md](docs/usage.md)
 - FastAPI endpoint map: [docs/fastapi-endpoint-map.md](docs/fastapi-endpoint-map.md)
-- Consolidation plan: [docs/node-consolidation-plan.md](docs/node-consolidation-plan.md)
 
 ## Installation
 

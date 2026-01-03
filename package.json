@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-kumiho",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Kumiho nodes for n8n",
   "license": "MIT",
   "homepage": "https://kumiho.io",
