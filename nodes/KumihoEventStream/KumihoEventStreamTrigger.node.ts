@@ -2,8 +2,21 @@ import type { IDataObject, INodeType, INodeTypeDescription, ITriggerFunctions, I
 import { sleep } from 'n8n-workflow';
 import { getKumihoCredentials, getKumihoRequestHeaders } from '../helpers/kumihoApi';
 
-type TriggerType = 'project' | 'space' | 'item' | 'revision' | 'artifact' | 'edge';
+type TriggerType = 'item' | 'revision' | 'artifact' | 'edge';
 type StreamAction = 'created' | 'updated' | 'deleted' | 'tagged';
+
+const matchesWildcardPattern = (valueRaw: string, patternRaw: string): boolean => {
+  const value = (valueRaw ?? '').trim();
+  const pattern = (patternRaw ?? '').trim();
+  if (!pattern) return true;
+
+  // Exact match if no wildcards.
+  if (!pattern.includes('*') && !pattern.includes('?')) return value === pattern;
+
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^${escaped.replace(/\\\*/g, '.*').replace(/\\\?/g, '.')}$`);
+  return re.test(value);
+};
 
 const normalizeContextPathToKrefFilter = (contextPathRaw: string): string => {
   const raw = (contextPathRaw ?? '').trim();
@@ -64,6 +77,29 @@ const getKrefLastSegment = (kref: string): string => {
   return parts.length ? parts[parts.length - 1] : withoutQuery;
 };
 
+const parseItemNameKindFromKref = (kref: string): { itemName?: string; itemKind?: string; itemNameKind?: string } => {
+  const last = getKrefLastSegment(kref);
+  if (!last) return {};
+
+  // Common: itemName.kind
+  const dotIndex = last.lastIndexOf('.');
+  if (dotIndex > 0 && dotIndex < last.length - 1) {
+    const itemName = last.slice(0, dotIndex);
+    const itemKind = last.slice(dotIndex + 1);
+    return { itemName, itemKind, itemNameKind: `${itemName}.${itemKind}` };
+  }
+
+  return { itemName: last, itemNameKind: last };
+};
+
+const getRoutingKeySegments = (routingKey: string): string[] => {
+  return (routingKey ?? '')
+    .trim()
+    .split('.')
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
 const matchesNameFilter = (event: unknown, triggerType: TriggerType, streamAction: StreamAction, filter: string): boolean => {
   const needle = filter.trim();
   if (!needle) return true;
@@ -74,37 +110,50 @@ const matchesNameFilter = (event: unknown, triggerType: TriggerType, streamActio
   const routingKey = String(evt.routing_key ?? '');
   const details = (evt.details && typeof evt.details === 'object' ? evt.details : {}) as Record<string, unknown>;
 
-  // Most robust (always present): routing_key substring match.
-  if (routingKey && routingKey.includes(needle)) return true;
-
-  // Next: kref substring match.
-  if (kref && kref.includes(needle)) return true;
-
-  // Type-specific interpretations
-  if (triggerType === 'revision' && streamAction === 'tagged') {
-    const tag = String(details.tag ?? details.tag_name ?? '');
-    return tag === needle;
+  // If the user provides a full routing key pattern (contains '.'), match against routing_key.
+  if (needle.includes('.')) {
+    return matchesWildcardPattern(routingKey, needle);
   }
 
-  if (triggerType === 'revision') {
-    const r = getKrefQueryParam(kref, 'r');
-    if (r && r === needle) return true;
-    const n = String(details.revision_number ?? details.number ?? '');
-    if (n && n === needle) return true;
+  // Type-specific interpretations (preferred; avoids confusing kref substring matches).
+  if (triggerType === 'item') {
+    // Expected: item.<name>.created/updated/deleted (e.g. item.image.created, item.metadata.updated)
+    const segs = getRoutingKeySegments(routingKey);
+    const typeSeg = segs[0];
+    const nameSeg = segs.length >= 3 ? segs[1] : '';
+    if (typeSeg === 'item' && nameSeg) return matchesWildcardPattern(nameSeg, needle);
+    return false;
+  }
+
+  if (triggerType === 'revision' && streamAction === 'updated') {
+    // Server emits e.g. revision.metadata.updated
+    const segs = getRoutingKeySegments(routingKey);
+    const typeSeg = segs[0];
+    const nameSeg = segs.length >= 3 ? segs[1] : '';
+    if (typeSeg === 'revision' && nameSeg) return matchesWildcardPattern(nameSeg, needle);
+    return false;
+  }
+
+  if (triggerType === 'revision' && streamAction === 'tagged') {
+    const tag = String(details.tag ?? details.tag_name ?? details.tagName ?? '');
+    return matchesWildcardPattern(tag, needle);
   }
 
   if (triggerType === 'artifact') {
+    const name = String(details.artifact_name ?? details.artifactName ?? details.name ?? '');
+    if (name) return matchesWildcardPattern(name, needle);
     const a = getKrefQueryParam(kref, 'a');
-    if (a && a === needle) return true;
-    const name = String(details.artifact_name ?? details.name ?? '');
-    if (name && name === needle) return true;
+    if (a) return matchesWildcardPattern(a, needle);
+    return false;
   }
 
-  if (triggerType === 'item' || triggerType === 'project' || triggerType === 'space') {
-    const last = getKrefLastSegment(kref);
-    // Item krefs often look like: itemName.kind
-    const baseName = last.includes('.') ? last.split('.')[0] : last;
-    return baseName === needle;
+  if (triggerType === 'revision') {
+    // If the user types a revision number, match kref query (?r=...)
+    const r = getKrefQueryParam(kref, 'r');
+    if (r && matchesWildcardPattern(r, needle)) return true;
+    const n = String(details.revision_number ?? details.revisionNumber ?? details.number ?? '');
+    if (n && matchesWildcardPattern(n, needle)) return true;
+    return false;
   }
 
   return false;
@@ -139,18 +188,9 @@ export class KumihoEventStreamTrigger implements INodeType {
           { name: 'Artifact', value: 'artifact' },
           { name: 'Edge', value: 'edge' },
           { name: 'Item', value: 'item' },
-          { name: 'Project', value: 'project' },
           { name: 'Revision', value: 'revision' },
-          { name: 'Space', value: 'space' },
         ],
         default: 'revision',
-      },
-      {
-        displayName: 'Path Filter (Project/Space)',
-        name: 'contextPath',
-        type: 'string',
-        default: '',
-        description: "Limit events to a project or space subtree (e.g. 'my-project', 'my-project/my-space', or 'kref://my-project/my-space/**')",
       },
       {
         displayName: 'Stream Action',
@@ -164,7 +204,7 @@ export class KumihoEventStreamTrigger implements INodeType {
         default: 'created',
         displayOptions: {
           show: {
-            triggerType: ['project', 'space', 'item', 'artifact', 'edge'],
+            triggerType: ['item', 'artifact', 'edge'],
           },
         },
       },
@@ -186,10 +226,25 @@ export class KumihoEventStreamTrigger implements INodeType {
         },
       },
       {
-        displayName: 'Routing Key Name Filter',
-        name: 'routingKeyNameFilter',
+        displayName: 'Path Filter (Project/Space)',
+        name: 'contextPath',
         type: 'string',
         default: '',
+        description: "Limit events to a project or space subtree (e.g. 'my-project', 'my-project/my-space', or 'kref://my-project/my-space/**')",
+      },
+      {
+        displayName: 'Item Name Filter',
+        name: 'itemNameFilter',
+        type: 'string',
+        default: '',
+        description: "Optional. Further limit events to a specific item name extracted from kref (e.g. 'hero' from 'hero.image'). Supports '*' and '?' wildcards.",
+      },
+      {
+        displayName: 'Item Kind Filter',
+        name: 'itemKindFilter',
+        type: 'string',
+        default: '',
+        description: "Optional. Further limit events to a specific item kind extracted from kref (e.g. 'image' from 'hero.image'). Supports '*' and '?' wildcards.",
       },
       {
         displayName: 'Advanced',
@@ -202,6 +257,14 @@ export class KumihoEventStreamTrigger implements INodeType {
             name: 'cursor',
             type: 'string',
             default: '',
+          },
+          {
+            displayName: 'Routing Key Name Filter',
+            name: 'routingKeyNameFilter',
+            type: 'string',
+            default: '',
+            description:
+              "Item: matches the routing key name segment (e.g. 'image' in 'item.image.created'). Revision Tagged: matches tag name. Artifact: matches artifact name. Supports '*' and '?' wildcards, or provide a full routing key pattern like 'item.*.created'.",
           },
         ],
       },
@@ -217,7 +280,7 @@ export class KumihoEventStreamTrigger implements INodeType {
   async trigger(this: ITriggerFunctions): Promise<ITriggerResponse> {
     const pollIntervalSeconds = this.getNodeParameter('pollIntervalSeconds') as number;
     const staticData = this.getWorkflowStaticData('node');
-    const advanced = this.getNodeParameter('advanced') as { cursor?: string };
+    const advanced = this.getNodeParameter('advanced') as { cursor?: string; routingKeyNameFilter?: string };
     let cursor = (advanced?.cursor as string) || (staticData.cursor as string);
     let isStopped = false;
 
@@ -284,10 +347,28 @@ export class KumihoEventStreamTrigger implements INodeType {
         const streamAction = (triggerType === 'revision'
           ? (this.getNodeParameter('streamActionRevision') as StreamAction)
           : (this.getNodeParameter('streamAction') as StreamAction));
-        const routingKeyFilter = `${triggerType}.${streamAction}`;
-        const routingKeyNameFilter = this.getNodeParameter('routingKeyNameFilter') as string;
+        const routingKeyFilter =
+          triggerType === 'item'
+            ? streamAction === 'deleted'
+              ? 'item.deleted,item.deprecated'
+              : streamAction === 'updated'
+                ? 'item.*.updated,item.metadata.updated'
+                : `item.*.${streamAction}`
+            : triggerType === 'artifact' && streamAction === 'deleted'
+              ? 'artifact.deleted,artifact.deprecated'
+              : triggerType === 'artifact' && streamAction === 'updated'
+                ? 'artifact.*.updated,artifact.metadata.updated'
+                : triggerType === 'revision' && streamAction === 'updated'
+                  ? `revision.*.updated,revision.metadata.updated`
+                  : triggerType === 'revision' && streamAction === 'deleted'
+                    ? 'revision.deleted,revision.deprecated'
+                    : `${triggerType}.${streamAction}`;
+        const routingKeyNameFilter = String(advanced?.routingKeyNameFilter ?? '').trim();
+
         const contextPath = this.getNodeParameter('contextPath') as string;
         const krefFilter = normalizeContextPathToKrefFilter(contextPath);
+        const itemNameFilter = String(this.getNodeParameter('itemNameFilter') as string).trim();
+        const itemKindFilter = String(this.getNodeParameter('itemKindFilter') as string).trim();
 
         const creds = await getKumihoCredentials(this);
         const headers = await getKumihoRequestHeaders(this);
@@ -309,6 +390,14 @@ export class KumihoEventStreamTrigger implements INodeType {
 
           if (!matchesContextPath(event, contextPath)) return;
           if (!matchesNameFilter(event, triggerType, streamAction, routingKeyNameFilter)) return;
+
+          if ((itemNameFilter || itemKindFilter) && event && typeof event === 'object') {
+            const evt = event as { kref?: string };
+            const kref = String(evt.kref ?? '');
+            const parsed = parseItemNameKindFromKref(kref);
+            if (itemNameFilter && !matchesWildcardPattern(parsed.itemName ?? '', itemNameFilter)) return;
+            if (itemKindFilter && !matchesWildcardPattern(parsed.itemKind ?? '', itemKindFilter)) return;
+          }
 
           if (event && typeof event === 'object' && 'cursor' in event) {
             const eventCursor = (event as { cursor?: string }).cursor;

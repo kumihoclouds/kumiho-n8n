@@ -117,7 +117,7 @@ This trigger connects to `GET /api/v1/events/stream` (Server-Sent Events / SSE) 
 
 ### Parameters
 
-- **Trigger Type**: `Project | Space | Item | Revision | Artifact | Edge`
+- **Trigger Type**: `Item | Revision | Artifact | Edge`
 - **Stream Action**:
   - For most types: `Created | Updated | Deleted`
   - For `Revision`: `Created | Updated | Deleted | Tagged`
@@ -127,28 +127,38 @@ This trigger connects to `GET /api/v1/events/stream` (Server-Sent Events / SSE) 
     - `my-project`
     - `my-project/my-space`
     - `kref://my-project/my-space/**`
-- **Routing Key Name Filter** (optional)
-  - A post-filter applied client-side.
-  - It matches against routing key and kref substring, and also supports type-specific behavior:
-    - Revision + Tagged: matches tag name in event details.
-    - Revision: also matches revision number.
-    - Artifact: also matches artifact name.
-    - Project/Space/Item: matches last kref segment (item name; item krefs often look like `name.kind`).
+- **Item Name Filter** (optional)
+  - Further limit events to a specific item name extracted from kref (e.g. `hero` from `hero.image`).
+  - Supports `*` and `?` wildcards.
+- **Item Kind Filter** (optional)
+  - Further limit events to a specific item kind extracted from kref (e.g. `image` from `hero.image`).
+  - Supports `*` and `?` wildcards.
 - **Poll Interval (Seconds)**: used as a reconnect delay if the SSE connection drops.
 - **Advanced → Cursor** (optional)
   - If set, starts streaming from this cursor.
   - If unset, the node resumes from the cursor persisted in workflow static data.
+- **Advanced → Routing Key Name Filter** (optional)
+  - A post-filter applied client-side.
+  - For `Item`, it matches the **routing key name segment** (e.g. `image` in `item.image.created`, or `metadata` in `item.metadata.updated`).
+  - Use this when you need to distinguish different `item.<name>.<action>` streams (e.g. `metadata` vs `image`).
+  - For `Revision` + `Tagged`, it matches the tag name in event `details`.
+  - For `Revision` + `Updated`, it matches the **routing key name segment** (e.g. `metadata` in `revision.metadata.updated`).
+  - For `Artifact`, it matches the artifact name (from event `details` or `?a=` in kref).
+  - Supports `*` and `?` wildcards, or you can provide a full routing key pattern like `item.*.created`.
 
 ### Filtering behavior (server-side + client-side)
 
 The node requests events with:
 
 - `routing_key_filter = "{triggerType}.{streamAction}"`
+  - Item: uses `item.*.{streamAction}` for Created; uses `item.*.updated,item.metadata.updated` for Updated; uses `item.deleted,item.deprecated` for Deleted
+  - Revision: uses `revision.*.updated,revision.metadata.updated` for Updated; uses `revision.deleted,revision.deprecated` for Deleted
+  - Artifact: uses `artifact.*.updated,artifact.metadata.updated` for Updated; uses `artifact.deleted,artifact.deprecated` for Deleted
 - `kref_filter` derived from **Path Filter**:
   - If you provide a simple path with no wildcards, it normalizes to `kref://.../**`.
   - If you include wildcards (`*` or `?`), the node assumes you know what you’re doing and passes it through.
 
-Then it applies additional client-side safety checks to ensure subtree semantics and to apply the **Routing Key Name Filter**.
+Then it applies additional client-side safety checks to ensure subtree semantics and to apply the **Item Name/Kind** filters and **Routing Key Name Filter**.
 
 ### Output
 
