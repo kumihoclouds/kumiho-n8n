@@ -4,13 +4,12 @@ Last updated: 2026-01-03
 
 This package intentionally ships **three nodes**:
 
-- **Kumiho Event Trigger** (poll-based trigger)
+- **Kumiho Event Trigger** (SSE event trigger)
 - **Kumiho Action** (REST-style Resource + Operation)
-- **Kumiho MCP Client** (lists tools exposed by Kumiho’s MCP endpoint)
+- **Kumiho MCP Client** (invokes tools exposed by Kumiho’s MCP endpoint)
 
 Related docs:
 
-- Consolidation plan: [node-consolidation-plan.md](node-consolidation-plan.md)
 - Endpoint map: [fastapi-endpoint-map.md](fastapi-endpoint-map.md)
 
 ---
