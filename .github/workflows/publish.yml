@@ -52,5 +52,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish
-        run: npm publish --provenance --access public
+      - name: Release (publish to npm)
+        env:
+          CI: true
+          NPM_CONFIG_PROVENANCE: "true"
+          NPM_CONFIG_ACCESS: public
+        run: npm run release
