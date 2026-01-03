@@ -2,11 +2,12 @@
 
 Last updated: 2026-01-03
 
-This package intentionally ships **three nodes**:
+This package intentionally ships **two nodes**:
 
 - **Kumiho Event Trigger** (SSE event trigger)
 - **Kumiho Action** (REST-style Resource + Operation)
-- **Kumiho MCP Client** (invokes tools exposed by Kumiho’s MCP endpoint)
+
+MCP tools (including AI Agent tool-use) are handled via n8n’s built-in **MCP Client** node.
 
 Related docs:
 
@@ -491,32 +492,19 @@ Note: Unlike the Revision “Create Edge” mode, Graph Create Edge does not val
 
 ---
 
-## 5) Node: Kumiho MCP Client
+## 5) MCP tools (use n8n native MCP Client)
 
-This node invokes an MCP tool by name.
+This package does not ship a custom MCP client node anymore.
 
-### Parameters
+To let an n8n **AI Agent** (or a regular workflow) use Kumiho’s MCP tools, use n8n’s built-in **MCP Client** node:
 
-- **Server Transport**: `HTTP Streamable` (currently the only option)
-- **Tool Name**: MCP tool name to invoke (dropdown populated from the server).
-- **Tool Arguments (JSON)**: JSON object passed to the tool.
-- **Options → Advanced: Override Endpoint**
-  - If enabled, you can override the MCP endpoint URL.
-  - Default endpoint is derived from the credential Base URL:
-    - `${baseUrl}/api/v1/mcp/tools`
-
-### Endpoint behavior
-
-- The node fetches the tool list from `.../api/v1/mcp/list` (derived from the tools endpoint).
-- Tool invocation calls `.../api/v1/mcp/invoke` with `{ "name": "...", "arguments": { ... } }`.
-- Auth headers:
+- **Server URL**: `https://api.kumiho.cloud/api/v1/mcp/tools`
+- **Transport**: HTTP Streamable
+- **Headers**:
   - `X-Kumiho-Token: <service token>`
-  - `Authorization: Bearer <user token or service token>`
-  - `x-tenant-id` when provided
+  - `x-tenant-id: <tenant id>` (only if your deployment requires it)
 
-### Output
-
-Returns the server response (commonly `{ "name": "...", "result": ... }`).
+Once connected, n8n will discover the available MCP tools and make them available for tool-use.
 
 ---
 

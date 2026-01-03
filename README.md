@@ -4,11 +4,12 @@ This is an n8n community node for [Kumiho](https://kumiho.io), the graph-native 
 
 ## Features
 
-This package intentionally ships **three nodes**:
+This package intentionally ships **two nodes**:
 
 - **Kumiho Event Trigger**: Streaming (SSE) event trigger (created/updated/deleted/tagged) with cursor persistence.
 - **Kumiho Action**: One node covering Projects, Spaces, Items, Revisions, Artifacts, Bundles, Graph, and Kref resolve.
-- **Kumiho MCP Client**: Invoke MCP tools.
+ 
+MCP tools: Use n8n's built-in **MCP Client** node pointed at Kumiho's MCP endpoint.
 
 For full operation-by-operation documentation, see the usage guide below.
 
@@ -28,7 +29,11 @@ For full operation-by-operation documentation, see the usage guide below.
 
 - **Kumiho Event Trigger**: Trigger workflows from Kumiho events via SSE `GET /api/v1/events/stream`.
 - **Kumiho Action**: Create/read/update/delete Kumiho resources via FastAPI routes under `/api/v1/*`.
-- **Kumiho MCP Client**: Invoke tools via `/api/v1/mcp/invoke`.
+
+### MCP tools (n8n native MCP Client)
+
+- **Server URL**: `${BASE_URL}/api/v1/mcp/tools`
+- **Auth headers**: send at least `X-Kumiho-Token: <service token>` (and `x-tenant-id` if your deployment requires it)
 
 For parameters and examples, see [docs/usage.md](docs/usage.md).
 
@@ -81,7 +86,7 @@ For write operations, the nodes may send `x-idempotency-key`. Some create endpoi
 
 ## Version History
 
-- **0.2.0**: Switched Event Trigger to SSE streaming and updated MCP Client to invoke tools.
+- **0.2.0**: Switched Event Trigger to SSE streaming.
 - **0.1.3**: Fixed `emit` call format and trigger activation race condition.
 - **0.1.2**: Fixed event polling timeout and client initialization. Added cursor persistence.
 - **0.1.1**: Fixed UI labels for node properties.

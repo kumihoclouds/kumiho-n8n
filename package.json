@@ -35,8 +35,7 @@
     ],
     "nodes": [
       "dist/nodes/KumihoEventStream/KumihoEventStreamTrigger.node.js",
-      "dist/nodes/KumihoAction/KumihoAction.node.js",
-      "dist/nodes/KumihoMcpClient/KumihoMcpClient.node.js"
+      "dist/nodes/KumihoAction/KumihoAction.node.js"
     ]
   },
   "devDependencies": {
