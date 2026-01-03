@@ -1,11 +1,16 @@
 {
   "name": "n8n-nodes-kumiho",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Kumiho nodes for n8n",
   "license": "MIT",
   "homepage": "https://kumiho.io",
-  "keywords": ["n8n-community-node-package"],
-  "author": { "name": "kaveone", "email": "duub.site@gmail.com" },
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "author": {
+    "name": "kaveone",
+    "email": "duub.site@gmail.com"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/kumihoclouds/kumiho-n8n.git"
@@ -19,11 +24,15 @@
     "release": "n8n-node release",
     "prepublishOnly": "n8n-node prerelease"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "n8n": {
     "n8nNodesApiVersion": 1,
     "strict": true,
-    "credentials": ["dist/credentials/KumihoApi.credentials.js"],
+    "credentials": [
+      "dist/credentials/KumihoApi.credentials.js"
+    ],
     "nodes": [
       "dist/nodes/KumihoEventStream/KumihoEventStreamTrigger.node.js",
       "dist/nodes/KumihoAction/KumihoAction.node.js",
@@ -39,5 +48,7 @@
     "release-it": "^19.0.4",
     "typescript": "5.9.2"
   },
-  "peerDependencies": { "n8n-workflow": "*" }
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
 }
