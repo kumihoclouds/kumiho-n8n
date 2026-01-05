@@ -65,6 +65,37 @@ const splitCsv = (value: unknown): string[] | undefined => {
   return raw.length ? raw : undefined;
 };
 
+const splitKrefList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => String(v ?? '').trim())
+      .filter(Boolean);
+  }
+
+  const raw = String(value ?? '').trim();
+  if (!raw) return [];
+
+  // Allow JSON array input (useful when piping data through nodes)
+  if (raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((v) => String(v ?? '').trim())
+          .filter(Boolean);
+      }
+    } catch {
+      // fall through to delimiter splitting
+    }
+  }
+
+  // Allow newline- or comma-separated lists
+  return raw
+    .split(/[\r\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+};
+
 const parseOptionalInt = (value: unknown): number | undefined => {
   const raw = String(value ?? '').trim();
   if (!raw) return undefined;
@@ -1234,10 +1265,11 @@ export class KumihoAction implements INodeType {
         },
       },
       {
-        displayName: 'Item Kref',
+        displayName: 'Item Kref(s)',
         name: 'bundleItemKref',
         type: 'string',
         default: '',
+        description: 'Single kref or a list (one per line, or comma-separated). Example: kref://project/space/item.kind',
         displayOptions: {
           show: {
             resource: ['bundle'],
@@ -1426,7 +1458,7 @@ export class KumihoAction implements INodeType {
         displayName: 'Metadata',
         name: 'metadata',
         type: 'json',
-        default: '{}',
+        default: {},
         displayOptions: {
           show: {
             operation: ['create', 'update'],
@@ -2665,26 +2697,56 @@ export class KumihoAction implements INodeType {
         if (operation === 'update') {
           const updateMode = this.getNodeParameter('updateModeBundle', index) as UpdateModeBundle;
           const bundleKref = this.getNodeParameter('bundleKref', index) as string;
-          const itemKref = this.getNodeParameter('bundleItemKref', index) as string;
+          const itemKrefInput = this.getNodeParameter('bundleItemKref', index) as string;
           const metadata = normalizeMetadata(this.getNodeParameter('metadata', index, {}));
 
+          const itemKrefs = splitKrefList(itemKrefInput);
+          if (!itemKrefs.length) {
+            throw new NodeOperationError(this.getNode(), 'Item Kref(s) is required');
+          }
+
           if (updateMode === 'bundleAddMember') {
-            const data = await kumihoRequest(this, {
-              method: 'POST',
-              path: '/api/v1/bundles/members/add',
-              body: { bundle_kref: bundleKref, item_kref: itemKref, metadata },
-            });
-            out.push({ json: data as IDataObject });
+            for (const itemKref of itemKrefs) {
+              try {
+                const data = await kumihoRequest(this, {
+                  method: 'POST',
+                  path: '/api/v1/bundles/members/add',
+                  body: { bundle_kref: bundleKref, item_kref: itemKref, metadata },
+                });
+                out.push({ json: { ...(data as IDataObject), bundle_kref: bundleKref, item_kref: itemKref } });
+              } catch (error) {
+                const err = error as unknown as { httpCode?: unknown; kumiho?: { status_code?: unknown } };
+                const httpCode = Number(err?.httpCode ?? err?.kumiho?.status_code);
+
+                // Treat "already exists" as idempotent success (member already in bundle).
+                if (httpCode === 409) {
+                  out.push({
+                    json: {
+                      success: true,
+                      message: 'Already exists',
+                      new_revision: null,
+                      bundle_kref: bundleKref,
+                      item_kref: itemKref,
+                    } as IDataObject,
+                  });
+                  continue;
+                }
+
+                throw error;
+              }
+            }
             continue;
           }
 
           if (updateMode === 'bundleRemoveMember') {
-            const data = await kumihoRequest(this, {
-              method: 'POST',
-              path: '/api/v1/bundles/members/remove',
-              body: { bundle_kref: bundleKref, item_kref: itemKref, metadata },
-            });
-            out.push({ json: data as IDataObject });
+            for (const itemKref of itemKrefs) {
+              const data = await kumihoRequest(this, {
+                method: 'POST',
+                path: '/api/v1/bundles/members/remove',
+                body: { bundle_kref: bundleKref, item_kref: itemKref, metadata },
+              });
+              out.push({ json: { ...(data as IDataObject), bundle_kref: bundleKref, item_kref: itemKref } });
+            }
             continue;
           }
         }
