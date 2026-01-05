@@ -1269,7 +1269,7 @@ export class KumihoAction implements INodeType {
         name: 'bundleItemKref',
         type: 'string',
         default: '',
-        description: 'Single kref or a list (one per line, or comma-separated). Example: kref://project/space/item.kind',
+        description: 'Single kref or a list (one per line, or comma-separated). Example: kref://project/space/item.kind.',
         displayOptions: {
           show: {
             resource: ['bundle'],
