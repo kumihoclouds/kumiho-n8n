@@ -704,7 +704,7 @@ export class KumihoAction implements INodeType {
         name: 'krefResolveKref',
         type: 'string',
         default: '',
-        description: 'Kref to resolve (e.g., kref://project/space/item.kind, kref://.../item.kind?r=1, or kref://.../item.kind?r=1&a=mesh.fbx).',
+        description: 'Kref to resolve (e.g., kref://project/space/item.kind, kref://.../item.kind?r=1, or kref://.../item.kind?r=1&a=mesh.fbx)',
         displayOptions: {
           show: {
             resource: ['kref'],
