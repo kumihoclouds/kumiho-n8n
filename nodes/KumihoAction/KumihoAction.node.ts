@@ -701,6 +701,20 @@ export class KumihoAction implements INodeType {
       },
       {
         displayName: 'Kref',
+        name: 'krefResolveKref',
+        type: 'string',
+        default: '',
+        description: 'Kref to resolve (e.g., kref://project/space/item.kind, kref://.../item.kind?r=1, or kref://.../item.kind?r=1&a=mesh.fbx).',
+        displayOptions: {
+          show: {
+            resource: ['kref'],
+            operation: ['read'],
+            readModeKref: ['krefResolve'],
+          },
+        },
+      },
+      {
+        displayName: 'Kref',
         name: 'krefRevisionUpdate',
         type: 'string',
         default: '',
@@ -1125,6 +1139,7 @@ export class KumihoAction implements INodeType {
         name: 'artifactName',
         type: 'string',
         default: '',
+        description: 'Optional. If empty, the revision\'s default artifact will be used.',
         displayOptions: {
           show: {
             resource: ['artifact', 'kref'],
@@ -1511,7 +1526,7 @@ export class KumihoAction implements INodeType {
           show: {
             resource: ['kref'],
             operation: ['read'],
-            readModeKref: ['krefResolveAdvanced'],
+            readModeKref: ['krefResolve'],
           },
         },
       },
@@ -1525,7 +1540,7 @@ export class KumihoAction implements INodeType {
           show: {
             resource: ['kref'],
             operation: ['read'],
-            readModeKref: ['krefResolveAdvanced'],
+            readModeKref: ['krefResolve'],
           },
         },
       },
@@ -1539,7 +1554,7 @@ export class KumihoAction implements INodeType {
           show: {
             resource: ['kref'],
             operation: ['read'],
-            readModeKref: ['krefResolveAdvanced'],
+            readModeKref: ['krefResolve'],
           },
         },
       },
@@ -2543,14 +2558,97 @@ export class KumihoAction implements INodeType {
         if (operation === 'read') {
           const readMode = this.getNodeParameter('readModeArtifact', index) as ReadModeArtifact;
           if (readMode === 'artifactGet') {
-            const revisionKref = this.getNodeParameter('revisionKrefArtifact', index) as string;
-            const name = this.getNodeParameter('artifactName', index) as string;
+            const revisionKrefRaw = this.getNodeParameter('revisionKrefArtifact', index) as string;
+            const revisionKref = normalizeKrefString(this, revisionKrefRaw, 'Revision Kref');
+            const rawName = this.getNodeParameter('artifactName', index) as string;
+
+            // If no name is provided, resolve the revision kref to determine the default artifact.
+            let name = String(rawName ?? '').trim();
+            let resolvedDefault: unknown | undefined;
+            if (!name) {
+              // Prefer fetching the revision, since it includes `default_artifact` in most deployments.
+              try {
+                const revisionData = await kumihoRequest(this, {
+                  method: 'GET',
+                  path: '/api/v1/revisions/by-kref',
+                  qs: { kref: revisionKref },
+                });
+                const rev = revisionData && typeof revisionData === 'object' ? (revisionData as Record<string, unknown>) : undefined;
+                const fromRevisionGet = rev?.default_artifact ?? rev?.defaultArtifact ?? rev?.defaultArtifactName;
+                if (typeof fromRevisionGet === 'string' && fromRevisionGet.trim()) {
+                  name = fromRevisionGet.trim();
+                }
+              } catch {
+                // ignore
+              }
+
+              // Fallback: if no default artifact is set, auto-pick only when there is exactly one artifact.
+              if (!name) {
+                try {
+                  const artifacts = await kumihoRequest(this, {
+                    method: 'GET',
+                    path: '/api/v1/artifacts',
+                    qs: { revision_kref: revisionKref },
+                  });
+                  if (Array.isArray(artifacts)) {
+                    const names = artifacts
+                      .map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>).name : undefined))
+                      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+                      .map((v) => v.trim());
+
+                    if (names.length === 1) {
+                      name = names[0];
+                    } else if (names.length > 1) {
+                      throw new NodeOperationError(
+                        this.getNode(),
+                        `Default artifact is not set for this revision and multiple artifacts exist. Provide Artifact Name. Available: ${names.join(', ')}`,
+                      );
+                    }
+                  }
+                } catch (error) {
+                  // If listing artifacts fails, fall through to the standard error below.
+                  if (error instanceof NodeOperationError) throw error;
+                }
+              }
+
+              // Resolve revision kref (without `a=`) to get a location via the default artifact.
+              resolvedDefault = await kumihoRequest(this, {
+                method: 'GET',
+                path: '/api/v1/resolve',
+                qs: { kref: revisionKref },
+              });
+            }
+
+            if (!name) {
+              throw new NodeOperationError(
+                this.getNode(),
+                'Artifact Name is required unless the revision has a default artifact (or exactly one artifact exists).',
+              );
+            }
+
             const data = await kumihoRequest(this, {
               method: 'GET',
               path: '/api/v1/artifacts/by-kref',
               qs: { revision_kref: revisionKref, name },
             });
-            out.push({ json: data as IDataObject });
+
+            const resolved =
+              resolvedDefault ??
+              (await kumihoRequest(this, {
+                method: 'GET',
+                path: '/api/v1/resolve',
+                qs: { kref: revisionKref, a: name },
+              }));
+
+            const resolvedLocation =
+              resolved && typeof resolved === 'object' ? (resolved as Record<string, unknown>).location : undefined;
+
+            out.push({
+              json: {
+                ...(data as IDataObject),
+                location: typeof resolvedLocation === 'string' ? resolvedLocation : (data as IDataObject).location,
+              } as IDataObject,
+            });
             continue;
           }
 
@@ -2843,7 +2941,12 @@ export class KumihoAction implements INodeType {
         if (operation === 'read') {
           const readMode = this.getNodeParameter('readModeKref', index) as ReadModeKref;
           if (readMode === 'krefResolve') {
-            const kref = this.getNodeParameter('kref', index) as string;
+            const kref =
+              (String(this.getNodeParameter('krefResolveKref', index, '') ?? '').trim() ||
+                String(this.getNodeParameter('kref', index, '') ?? '').trim()) as string;
+            if (!kref) {
+              throw new NodeOperationError(this.getNode(), 'Kref is required');
+            }
             const r = parseOptionalInt(this.getNodeParameter('krefResolveRevisionNumber', index, ''));
             const t = String(this.getNodeParameter('krefResolveTag', index, '') ?? '').trim() || undefined;
             const a = String(this.getNodeParameter('krefResolveArtifactName', index, '') ?? '').trim() || undefined;
@@ -2858,6 +2961,45 @@ export class KumihoAction implements INodeType {
               path: '/api/v1/resolve',
               qs,
             });
+
+            // If `a` isn't provided, /resolve can still return a location (via default artifact)
+            // but may not report which artifact was used. Best-effort enrich from /resolve/revision.
+            if (a === undefined && data && typeof data === 'object') {
+              const dataObj = data as Record<string, unknown>;
+              const hasResolvedArtifact =
+                typeof dataObj.resolved_artifact === 'string' && dataObj.resolved_artifact.trim().length > 0;
+              const hasResolvedRevision = typeof dataObj.resolved_revision === 'number';
+
+              if (!hasResolvedArtifact || !hasResolvedRevision) {
+                try {
+                  const revResolved = await kumihoRequest(this, {
+                    method: 'GET',
+                    path: '/api/v1/resolve/revision',
+                    qs: { kref, t },
+                  });
+                  const revision =
+                    revResolved && typeof revResolved === 'object'
+                      ? ((revResolved as Record<string, unknown>).revision as Record<string, unknown> | undefined)
+                      : undefined;
+                  const defaultArtifact =
+                    revision?.default_artifact ?? revision?.defaultArtifact ?? revision?.defaultArtifactName;
+                  const revisionNumber = revision?.number;
+                  out.push({
+                    json: {
+                      ...(data as IDataObject),
+                      ...(typeof defaultArtifact === 'string' && defaultArtifact.trim().length > 0
+                        ? { resolved_artifact: defaultArtifact.trim() }
+                        : {}),
+                      ...(typeof revisionNumber === 'number' ? { resolved_revision: revisionNumber } : {}),
+                    } as IDataObject,
+                  });
+                  continue;
+                } catch {
+                  // Ignore enrichment failures; return the original resolve response.
+                }
+              }
+            }
+
             out.push({ json: data as IDataObject });
             continue;
           }
