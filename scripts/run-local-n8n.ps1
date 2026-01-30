@@ -188,6 +188,10 @@ if (-not $NoStart) {
     Ensure-NpmOnPath
   $env:N8N_LOG_LEVEL = 'debug'
   $env:N8N_LOG_OUTPUT = 'console'
+
+  # Match docker-compose style: NODES_EXCLUDE=["n8n-nodes-base.localFileTrigger"]
+  $env:NODES_EXCLUDE = '["n8n-nodes-base.localFileTrigger"]'
+  Write-Host "NODES_EXCLUDE: $env:NODES_EXCLUDE" -ForegroundColor Cyan
   
   # Try letting n8n discover it naturally in the custom folder first
   # If that fails, uncomment the line below to force it
@@ -195,7 +199,7 @@ if (-not $NoStart) {
   Write-Host "N8N_CUSTOM_EXTENSIONS: $env:N8N_CUSTOM_EXTENSIONS" -ForegroundColor Cyan
   
   # Allow access to ComfyUI output and local n8n files
-  $env:N8N_RESTRICT_FILE_ACCESS_TO = "$env:USERPROFILE\.n8n-files;C:\ComfyUI\output"
+  $env:N8N_RESTRICT_FILE_ACCESS_TO = "$env:USERPROFILE\.n8n-files;C:\ComfyUI\output;C:\Users\isake\AppData\Local\com.kumiho.ingest.studio"
   Write-Host "N8N_RESTRICT_FILE_ACCESS_TO: $env:N8N_RESTRICT_FILE_ACCESS_TO" -ForegroundColor Cyan
   
   npx -y n8n@latest
