@@ -2631,7 +2631,7 @@ export class KumihoAction implements INodeType {
 
             // If no name is provided, resolve the revision kref to determine the default artifact.
             let name = String(rawName ?? '').trim();
-            let resolvedDefault: unknown | undefined;
+            const nameWasProvided = name.length > 0;
             if (!name) {
               // Prefer fetching the revision, since it includes `default_artifact` in most deployments.
               try {
@@ -2677,13 +2677,6 @@ export class KumihoAction implements INodeType {
                   if (error instanceof NodeOperationError) throw error;
                 }
               }
-
-              // Resolve revision kref (without `a=`) to get a location via the default artifact.
-              resolvedDefault = await kumihoRequest(this, {
-                method: 'GET',
-                path: '/api/v1/resolve',
-                qs: { kref: revisionKref },
-              });
             }
 
             if (!name) {
@@ -2699,21 +2692,67 @@ export class KumihoAction implements INodeType {
               qs: { revision_kref: revisionKref, name },
             });
 
-            const resolved =
-              resolvedDefault ??
-              (await kumihoRequest(this, {
-                method: 'GET',
-                path: '/api/v1/resolve',
-                qs: { kref: revisionKref, a: name },
-              }));
+            // IMPORTANT: Never override a matched artifact's location with a revision-level default.
+            // Prefer the artifact payload itself; only fall back when location is missing.
+            const dataObj = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+            const dataLocationRaw = dataObj.location;
+            let location: string | undefined =
+              typeof dataLocationRaw === 'string' && dataLocationRaw.trim().length > 0 ? dataLocationRaw : undefined;
 
-            const resolvedLocation =
-              resolved && typeof resolved === 'object' ? (resolved as Record<string, unknown>).location : undefined;
+            // Fallback 1: list artifacts and find the matching artifact by name (authoritative).
+            if (!location) {
+              try {
+                const artifacts = await kumihoRequest(this, {
+                  method: 'GET',
+                  path: '/api/v1/artifacts',
+                  qs: { revision_kref: revisionKref },
+                });
+
+                if (Array.isArray(artifacts)) {
+                  const match = artifacts.find((entry) => {
+                    if (!entry || typeof entry !== 'object') return false;
+                    const entryName = (entry as Record<string, unknown>).name;
+                    return typeof entryName === 'string' && entryName.trim() === name;
+                  }) as Record<string, unknown> | undefined;
+
+                  const matchLocation = match?.location;
+                  if (typeof matchLocation === 'string' && matchLocation.trim().length > 0) {
+                    location = matchLocation;
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            }
+
+            // Fallback 2: /resolve (best-effort). Only accept if it resolves to the requested artifact.
+            if (!location) {
+              try {
+                const resolved = await kumihoRequest(this, {
+                  method: 'GET',
+                  path: '/api/v1/resolve',
+                  qs: { kref: revisionKref, a: name },
+                });
+                const resolvedObj = resolved && typeof resolved === 'object' ? (resolved as Record<string, unknown>) : undefined;
+                const resolvedLocation = resolvedObj?.location;
+                const resolvedArtifact =
+                  resolvedObj?.resolved_artifact ?? resolvedObj?.resolvedArtifact ?? resolvedObj?.resolvedArtifactName;
+
+                const resolvesToRequested = typeof resolvedArtifact === 'string' && resolvedArtifact.trim() === name;
+                if (typeof resolvedLocation === 'string' && resolvedLocation.trim().length > 0) {
+                  if (!nameWasProvided || resolvesToRequested) {
+                    location = resolvedLocation;
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            }
 
             out.push({
               json: {
                 ...(data as IDataObject),
-                location: typeof resolvedLocation === 'string' ? resolvedLocation : (data as IDataObject).location,
+                ...(location ? { location } : {}),
               } as IDataObject,
             });
             continue;
