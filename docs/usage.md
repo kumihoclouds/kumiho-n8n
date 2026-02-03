@@ -343,6 +343,15 @@ This is the main node for calling Kumiho’s REST-style endpoints. It follows th
   - **Tag** (default `latest`; sent as `t`)
 - Request: `GET /api/v1/revisions/by-kref?kref=...&t=...`
 
+**Read → Get Revision (as of Timestamp)**
+
+- Inputs:
+  - **Item Kref** (required)
+  - **Tag** (default `published`; the tag to query)
+  - **Timestamp** (required; supports `YYYYMMDDHHMM` format like `202506011430` or ISO 8601 format like `2025-06-01T14:30:00Z`)
+- Request: `GET /api/v1/revisions/as-of?item_kref=...&tag=...&time=...`
+- Use case: Time-travel queries for reproducible builds and historical analysis. Answers questions like "What was the published revision on June 1st, 2025?"
+
 **Read → List Revision Artifacts**
 
 - Inputs:

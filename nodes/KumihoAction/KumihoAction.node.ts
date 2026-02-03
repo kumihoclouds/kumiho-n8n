@@ -36,6 +36,7 @@ type ReadModeItem = 'itemGet' | 'itemGetByPath' | 'itemSearch';
 type ReadModeRevision =
   | 'revisionGetByKref'
   | 'revisionGetByTag'
+  | 'revisionGetAsOf'
   | 'revisionListArtifacts'
   | 'revisionListTags'
   | 'revisionHasTag'
@@ -376,6 +377,7 @@ export class KumihoAction implements INodeType {
           { name: 'Analyze Impact', value: 'graphAnalyzeImpact' },
           { name: 'Find Path', value: 'graphFindPath' },
           { name: 'Get Dependencies', value: 'graphGetDependencies' },
+          { name: 'Get Revision (as of Timestamp)', value: 'revisionGetAsOf' },
           { name: 'Get Revision (by Kref)', value: 'revisionGetByKref' },
           { name: 'Get Revision (by Tag)', value: 'revisionGetByTag' },
           { name: 'Has Tag', value: 'revisionHasTag' },
@@ -647,6 +649,48 @@ export class KumihoAction implements INodeType {
       },
       {
         displayName: 'Item Kref',
+        name: 'itemKrefRevisionGetAsOf',
+        type: 'string',
+        default: '',
+        description: 'Item reference (e.g., kref://project/space/item.kind)',
+        displayOptions: {
+          show: {
+            resource: ['revision'],
+            operation: ['read'],
+            readModeRevision: ['revisionGetAsOf'],
+          },
+        },
+      },
+      {
+        displayName: 'Tag',
+        name: 'tagAsOf',
+        type: 'string',
+        default: 'published',
+        description: 'Tag to query (e.g., published, approved, latest)',
+        displayOptions: {
+          show: {
+            resource: ['revision'],
+            operation: ['read'],
+            readModeRevision: ['revisionGetAsOf'],
+          },
+        },
+      },
+      {
+        displayName: 'Timestamp',
+        name: 'timestampAsOf',
+        type: 'string',
+        default: '',
+        description: 'Point in time to query. Supports YYYYMMDDHHMM format (e.g., 202506011430) or ISO 8601 format (e.g., 2025-06-01T14:30:00Z)',
+        displayOptions: {
+          show: {
+            resource: ['revision'],
+            operation: ['read'],
+            readModeRevision: ['revisionGetAsOf'],
+          },
+        },
+      },
+      {
+        displayName: 'Item Kref',
         name: 'itemKrefRevisionHasTag',
         type: 'string',
         default: '',
@@ -689,6 +733,7 @@ export class KumihoAction implements INodeType {
             readModeRevision: [
               'revisionGetByKref',
               'revisionGetByTag',
+              'revisionGetAsOf',
               'revisionHasTag',
               'revisionListArtifacts',
               'graphListEdges',
@@ -2321,6 +2366,28 @@ export class KumihoAction implements INodeType {
               method: 'GET',
               path: '/api/v1/revisions/by-kref',
               qs: { kref: itemKref, t: tag },
+            });
+            out.push({ json: data as IDataObject });
+            continue;
+          }
+
+          if (readMode === 'revisionGetAsOf') {
+            const itemKref =
+              (String(this.getNodeParameter('itemKrefRevisionGetAsOf', index, '') ?? '').trim() ||
+                String(this.getNodeParameter('itemKref', index, '') ?? '').trim() ||
+                String(this.getNodeParameter('kref', index, '') ?? '').trim()) as string;
+            const normalizedItemKref = normalizeKrefString(this, itemKref, 'Item Kref');
+            const tag =
+              (String(this.getNodeParameter('tagAsOf', index, 'published') ?? '').trim() ||
+                'published') as string;
+            const timestamp = String(this.getNodeParameter('timestampAsOf', index, '') ?? '').trim();
+            if (!timestamp) {
+              throw new NodeOperationError(this.getNode(), 'Timestamp is required for as-of query', { itemIndex: index });
+            }
+            const data = await kumihoRequest(this, {
+              method: 'GET',
+              path: '/api/v1/revisions/as-of',
+              qs: { item_kref: normalizedItemKref, tag, time: timestamp },
             });
             out.push({ json: data as IDataObject });
             continue;
